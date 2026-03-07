@@ -1,0 +1,11 @@
+#!/bin/bash
+
+ROOT="$(realpath $(dirname "$0"))"
+
+finch run --rm \
+  --mount=type=bind,source="$ROOT",destination=/work \
+  --workdir /work \
+  registry.gitlab.com/islandoftex/images/texlive:TL2025-2026-01-18-full \
+  latexmk -pdf -xelatex -recorder \
+  -latexoption="-interaction nonstopmode" \
+  -outdir=build talk.tex $@

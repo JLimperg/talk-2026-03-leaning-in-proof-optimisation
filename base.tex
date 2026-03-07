@@ -1,0 +1,407 @@
+\usepackage{fontspec}
+\usepackage{mathtools}
+\usepackage{unicode-math}
+\usepackage{tikz}
+\usetikzlibrary{trees}
+\usepackage{mathpartir}
+\usepackage{parskip}
+\usepackage{minted}
+\usepackage{csquotes}
+\usepackage{tcolorbox}
+\usepackage{biblatex} % TODO style w/o quotation marks
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{color,soul}
+\usepackage{xcolor}
+\usepackage{scrextend}
+
+\setmainfont{XITS}
+\setmathfont{XITS Math}
+\setsansfont[Scale=MatchLowercase]{DejaVu Sans}
+\setmonofont[Scale=MatchLowercase]{DejaVu Sans Mono}
+
+\addbibresource{lit.bib}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\Large\textbullet}
+\setbeamertemplate{itemize subitem}{\Large\textbullet}
+\setbeamertemplate{itemize subsubitem}{\Large\textbullet}
+
+\tcbset{frame empty, boxsep=0pt, left=1em, right=1em}
+
+% Colourblind-friendly palette from https://www.nceas.ucsb.edu/sites/default/files/2022-06/Colorblind%20Safe%20Color%20Schemes.pdf
+\definecolor{csgreen}{RGB}{000,158,115}
+\definecolor{csorange}{RGB}{213,094,000}
+\definecolor{csblue}{RGB}{000,114,178}
+\definecolor{cspurple}{RGB}{204,121,167}
+\definecolor{csyellow}{RGB}{240,228,066}
+\newcommand{\orange}[1]{\textcolor{csorange}{#1}}
+\newcommand{\blue}[1]{\textcolor{csblue}{#1}}
+\newcommand{\green}[1]{\textcolor{csgreen}{#1}}
+\newcommand{\purple}[1]{\textcolor{cspurple}{#1}}
+
+\setminted[lean4]{extrakeywords={aesop cases add aesop? intro simp simp_all only split apply on_goal next rename_i safe unsafe norm constructors forward destruct norm_num done add_aesop_rules rfl subst ext decide field_simp ring_nf nlinarith exact by_contra linarith rw grind}}
+\newmintinline[lean]{lean4}{bgcolor={},ignorelexererrors=true}
+\newminted[leancode]{lean4}{bgcolor={},ignorelexererrors=true,fontsize=\footnotesize,autogobble,beameroverlays,highlightcolor=csyellow}
+\BeforeBeginEnvironment{leancode}{\begin{tcolorbox}}
+\AfterEndEnvironment{leancode}{\end{tcolorbox}}
+\usemintedstyle{xcode}
+
+\setlength{\parskip}{1em}
+\setlength{\tabcolsep}{0.5em}
+
+% Source: https://tex.stackexchange.com/questions/102069/make-a-heading-in-beamer
+\newcommand\frameheading[1]{%
+  \par\bigskip
+  {\Large\usebeamercolor[fg]{palette primary}#1}\par\smallskip}
+
+\setbeamercolor{structure}{fg=csblue}
+
+\renewcommand{\iff}{\leftrightarrow}
+\newcommand{\com}{,\,}
+\renewcommand{\emph}[1]{\orange{#1}}
+\newcommand{\emphbox}[1]{%
+    \colorlet{currentcolor}{.}%
+    {\color{csorange}\fbox{\color{currentcolor}#1}}%
+}
+\newcommand{\mvar}[1]{\ensuremath{\mathit{?#1}}}
+\newcommand{\rulename}[1]{\textrm{#1}}
+\newcommand{\rulelabel}[1]{\quad \text{\rulename{#1}}}
+\newcommand{\Expr}{\ensuremath{\mathbb{E}}}
+\newcommand{\Hyps}{\ensuremath{\mathbb{H}}}
+\newcommand{\Matches}{\ensuremath{\mathbb{M}}}
+\newcommand{\Slots}{\ensuremath{\mathbb{S}}}
+\newcommand{\Vars}{\ensuremath{\mathbb{V}}}
+\newcommand{\Pow}[1]{\ensuremath{\mathcal{P}(#1)}}
+\newcommand{\dom}[1]{\ensuremath{\mathrm{dom}(#1)}}
+\newcommand{\cod}[1]{\ensuremath{\mathrm{cod}(#1)}}
+\newcommand{\pre}{\ensuremath{\mathrm{pre}}}
+\newcommand{\post}{\ensuremath{\mathrm{post}}}
+
+\begin{document}
+
+\title{Symbolic Proof Optimisation for Lean}
+\author{Jannis Limperg\\limperg@amazon.com\\Amazon Web Services}
+\date{Leaning In, March 2026, Berlin}
+
+\setbeamertemplate{footline}[text line]{\parbox{\textwidth}{\centering \url{FIXME} \medskip}}
+
+\begin{frame}
+  \maketitle
+\end{frame}
+
+\setbeamertemplate{footline}[text line]{\parbox{\textwidth}{\centering \insertframenumber\medskip}}
+
+\AtBeginSection{
+  \setbeamertemplate{footline}{}
+  \begin{frame}
+    \usebeamercolor[fg]{frametitle}
+    \Large \center{\insertsection}
+  \end{frame}
+  \setbeamertemplate{footline}[text line]{\parbox{\textwidth}{\centering \insertframenumber\medskip}}
+}
+
+\begin{frame}
+  \frametitle{Context}
+
+  \begin{block}{Objective}
+    Fix obvious deficiencies in Lean proofs:
+    \begin{itemize}
+      \item unused \lean|have| tactic;
+      \item tactic never called;
+      \item manual proof can be replaced by \lean|grind|/\lean|linarith|/\lean|aesop|;
+      \item non-terminal \lean|aesop| or non-squeezed \lean|simp|;
+      \item \dots
+    \end{itemize}
+  \end{block}
+
+  \pause
+
+  \begin{block}{Motivation}
+    \begin{itemize}
+      \item Improve AI-generated proofs for training and human consumption;
+      \item (eventually) improve sloppy human proofs and auto-apply linters.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{An LLM-Generated Proof}
+
+  \begin{leancode}[escapeinside=$$]
+    theorem cos_range_value (a : ℝ) (x : ℝ)
+        (h_cos : cos x = (2 * a - 3) / (4 - a))
+        (h_quad : -1 < cos x ∧ cos x < 0) :
+        -1 < a ∧ a < 3 / 2 := by
+      have h_denom_ne_zero : 4 - a ≠ 0 := by
+        by_contra h
+        have h₁ : 4 - a = 0 := by
+          linarith
+        rw [h₁] at h_cos
+        norm_num at h_cos
+        have h₂ : cos x = 0 := by
+          linarith
+        linarith [h_quad.2]
+      have h_denom_pos : 4 - a > 0 := by
+
+      $\emph{... 104 lines later ...}$
+
+      exact ⟨h_neg_one_lt_a, h_a_lt_three_half⟩
+  \end{leancode}
+
+  Produced by DeepSeek Prover v2 (FIXME ref).
+\end{frame}
+
+\begin{frame}
+  \frametitle{(Symbolic) Proof Optimisation}
+
+  \begin{itemize}
+    \item Similar to an optimising compiler.
+    \item Applies various \emph{optimisation passes} that simplify the proof.
+    \item Implemented in an internal (hopefully eventually open source) Lean library.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Why Not LLM?}
+
+  \begin{itemize}
+    \item Various specially trained LLM-based optimisers (FIXME refs), or just ask Claude.
+    \item Tradeoff: LLMs are more general, much less development effort, more costly (time and money).
+    \item Combined approach may be optimal: symbolic for obvious defects, LLMs for more interesting optimisations.
+    \item Can integrate LLMs (or SLMs) as optimisation passes in a symbolic framework.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Redundancy 1: Unused Facts}
+
+  \begin{leancode}[escapeinside=$$]
+    have h₆ : a > 3 / 2 := by
+      ...
+
+    $\emph{... h₆ never used ...}$
+  \end{leancode}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Redundancy 2: Restating Known Facts}
+
+  \begin{leancode}
+    have h_denom_ne_zero : 4 - a ≠ 0 := by
+      ...
+
+    have h₂ : 4 - a ≠ 0 := h_denom_ne_zero
+  \end{leancode}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Redundancy 3: Restating the Goal}
+
+  \begin{leancode}[escapeinside=$$]
+    have h₅₂ : $\emphbox{(2 * a - 3) / (4 - a) ≥ 0}$ := by
+      have h₅₃ : 4 - a < 0 := h₃
+      have h₅₄ : $\emphbox{(2 * a - 3) / (4 - a) ≥ 0}$ := by
+        have h₅₅ : 2 * a - 3 ≤ 0 := h₅₁
+        have h₅₆ : 4 - a < 0 := h₃
+        have h₅₇ : $\emphbox{(2 * a - 3) / (4 - a) ≥ 0}$ := by
+          ...
+        exact h₅₇
+      exact h₅₄
+  \end{leancode}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Redundancy 4: Unused Tactics}
+  \begin{leancode}
+    field_simp [h₅₁, sub_ne_zero.mpr h₅₁] <;>
+      ring_nf <;>
+      field_simp [h₅₁, sub_ne_zero.mpr h₅₁] <;>
+      nlinarith
+  \end{leancode}
+\end{frame}
+
+\begin{frame}
+  \begin{block}{Results}
+    \begin{itemize}
+      \item Reduces our example proof from \emph{115} lines to \emph{60}.
+      \item Reduces code size of one of our SFT datasets (also produced by DeepSeek Prover v2) by \emph{60\%}.
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Caveats}
+    \begin{itemize}
+      \item Optimisation passes are generally \emph{incomplete}.
+      \item Optimisation may \emph{hurt} when training an LLM to \emph{find} Lean proofs in one shot.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Architecture}
+
+  We distinguish three kinds of optimisation passes:
+  \begin{itemize}
+    \item \emph{Syntactic}: purely syntactic, guaranteed semantics-preserving.
+    \item \emph{Semantics}: need elaboration information, e.g.\ goals before/after tactics.
+      \begin{itemize}
+        \item \emph{Unchecked}: guaranteed semantics-preserving.
+        \item \emph{Checked}: generally not semantics-preserving; need to check individual rewrites.
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Syntactic Passes}
+
+  \begin{block}{Examples}
+    \begin{leancode}
+      simp; skip     →   simp
+      solve | fail   →   fail
+      simp at h h    →   simp at h
+    \end{leancode}
+
+    \pause
+
+    \begin{leancode}
+      theorem foo (n : Nat) : (m : Nat) → P n m := by
+        intro m
+        ...
+
+      →
+
+      theorem foo (n m : Nat) : P n m := by
+        ...
+    \end{leancode}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Custom Syntactic Sugar}
+
+  We define a simple custom elaborator to make it easy to define syntactic rewrites.
+
+  \begin{leancode}
+    def solve := ls_analysis_fn%
+      | `(tactic| solve $[| $tss]*) => do
+        let tss' := tss.filter fun ts =>
+          ! (isSkipTacticSeq ts || isFailTacticSeq ts)
+        if tss'.size == tss.size then
+          return none
+        if tss'.isEmpty then
+          `(tactic| fail)
+        else
+          `(tactic| solve $[| $tss']*)
+  \end{leancode}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Syntactic Passes}
+
+  \begin{itemize}
+    \item Very cheap (compared to semantic passes), so we apply them eagerly before/after semantic passes.
+    \item We make them even cheaper:
+      \begin{itemize}
+        \item Combine all optimisations into a single post-traversal with a fixpoint loop at each syntax node.
+        \item Index individual optimisations by their head node kind.
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Semantic Passes}
+
+  Rely on the \emph{info trees} produced during elaboration.
+  These contain information about expression types, goals before/after each tactic, identifier shadowing, etc.
+
+  \pause
+
+  E.g. to remove \lean|have h : A := ...|, we must know that \lean|h| was not used during the elaboration of the following tactics.
+\end{frame}
+
+\begin{frame}
+  \frametitle{Info Tree Constraints}
+
+  \begin{block}{Info tree nodes are identified by syntax source position}
+    Hence every rewrite invalidates the info trees.
+  \end{block}
+
+  \pause
+
+  \begin{block}{Syntax lookup is linear}
+    Probably not a problem in practice, but we prematurely optimise by lazily building indices for the information we need.
+  \end{block}
+
+  \pause
+
+  \begin{block}{Info tree information is sometimes incomplete}
+    E.g.\ the connection between names in the syntax and fvars is sometimes lost.
+  \end{block}
+
+  \pause
+
+  Info trees are intended for use by the language server, so it's expected that they do not perfectly support our use case.
+\end{frame}
+
+\begin{frame}
+  \frametitle{The Performance Challenge}
+
+  Naively, we can \emph{re-elaborate the command after each rewrite}, both to check the rewrite and to update the info trees.
+
+  \begin{block}{Problem}
+    Prohibitively \emph{expensive}: elaborating a proof can take \emph{seconds}.
+  \end{block}
+
+  \begin{block}{Partial solution: batching}
+    Perform \emph{multiple rewrites} and only then elaborate the changed command.
+
+    \begin{itemize}
+      \item Only works for non-checked passes.
+      \item Only works if the rewrites are guaranteed not to interfere with each other.
+    \end{itemize}
+  \end{block}
+
+  \pause
+
+  \begin{block}{Partial solution (future work): compositional optimisation}
+    We ought to make use of the typical decomposition of Lean proofs into \emph{focused subproofs}.
+    However, there are subtleties, e.g.\ a focused subproof can have non-local effects if its initial goal contains a metavariable.
+  \end{block}
+\end{frame}
+
+\begin{frame}
+  \frametitle{The Extensibility Challenge}
+
+  \begin{block}{Problem}
+    Almost any invariant we rely on can be violated by custom tactics.
+  \end{block}
+
+  \begin{block}{Solution (future work)}
+    Define \emph{extension hooks} for all passes that instruct the pass to skip certain tactics or process them differently.
+    (Many linters have similar hooks.)
+  \end{block}
+
+  \pause
+
+  \begin{block}{Solution (for now)}
+    Ignore the problem and accept a certain failure rate (< 5\% on our SFT dataset).
+  \end{block}
+\end{frame}
+
+\begin{frame}
+  \frametitle{A Final Caveat}
+
+  The pretty-printer somewhat regularly produces syntax that does not elaborate correctly, even with the \lean|pp.analyze| option.
+  This is a known (and very hard) problem that will hopefully be solved at some point.
+\end{frame}
+
+\begin{frame}
+  \begin{center}
+    {\huge{Thanks!}}
+  \end{center}
+
+  FIXME QR
+\end{frame}
+
+\end{document}
