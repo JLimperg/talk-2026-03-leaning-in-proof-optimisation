@@ -150,11 +150,11 @@
       exact ⟨h_neg_one_lt_a, h_a_lt_three_half⟩
   \end{leancode}
 
-  Produced by DeepSeek Prover v2 (FIXME ref).
+  Produced by DeepSeek-Prover-V2.
 \end{frame}
 
 \begin{frame}
-  \frametitle{(Symbolic) Proof Optimisation}
+  \frametitle{Symbolic Proof Optimisation}
 
   \begin{itemize}
     \item Similar to an optimising compiler.
@@ -167,8 +167,8 @@
   \frametitle{Why Not LLM?}
 
   \begin{itemize}
-    \item Various specially trained LLM-based optimisers (FIXME refs), or just ask Claude.
-    \item Tradeoff: LLMs are more general, much less development effort, more costly (time and money).
+    \item Use specially trained LLM-based optimisers\footfullcite{ProofOptimizer}, or just ask Claude.
+    \item Tradeoff: LLMs are more general, less development effort, more costly (time and money).
     \item Combined approach may be optimal: symbolic for obvious defects, LLMs for more interesting optimisations.
     \item Can integrate LLMs (or SLMs) as optimisation passes in a symbolic framework.
   \end{itemize}
@@ -226,7 +226,7 @@
   \begin{block}{Results}
     \begin{itemize}
       \item Reduces our example proof from \emph{115} lines to \emph{60}.
-      \item Reduces code size of one of our SFT datasets (also produced by DeepSeek Prover v2) by \emph{60\%}.
+      \item Reduces code size of one of our SFT datasets (also produced by DeepSeek-Prover-V2\footfullcite{DSPv2}) by \emph{60\%}.
     \end{itemize}
   \end{block}
 
