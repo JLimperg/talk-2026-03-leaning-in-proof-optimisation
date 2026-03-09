@@ -12,7 +12,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Build PDFs
-      run: "./mk && ./mk-handout"
+      run: "./mk && ./mk --handout"
     - name: Get version
       id: get_version
       run: |
