@@ -108,10 +108,10 @@
   \begin{block}{Objective}
     Fix obvious deficiencies in Lean proofs:
     \begin{itemize}
-      \item unused \lean|have| tactic;
-      \item tactic never called;
-      \item manual proof can be replaced by \lean|grind|/\lean|linarith|/\lean|aesop|;
-      \item non-terminal \lean|aesop| or non-squeezed \lean|simp|;
+      \item Unused \lean|have| tactic
+      \item Tactic never called
+      \item Manual proof can be replaced by \lean|grind|/\lean|linarith|/\lean|aesop|
+      \item Non-terminal \lean|aesop| or non-squeezed \lean|simp|
       \item \dots
     \end{itemize}
   \end{block}
@@ -120,8 +120,8 @@
 
   \begin{block}{Motivation}
     \begin{itemize}
-      \item Improve AI-generated proofs for training and human consumption;
-      \item (eventually) improve sloppy human proofs and auto-apply linters.
+      \item Improve AI-generated proofs for training and human consumption
+      \item (Eventually) improve sloppy human proofs and auto-apply linter suggestions
     \end{itemize}
   \end{block}
 \end{frame}
@@ -161,6 +161,10 @@
     \item Applies various \emph{optimisation passes} that simplify the proof.
     \item Implemented in an internal (hopefully eventually open source) Lean library.
   \end{itemize}
+
+  \pause
+
+  Mathlib's tactic analysis framework\footnote{Mathlib/Tactic/TacticAnalysis.lean} is conceptually similar, but only generates optimisation suggestions without applying them.
 \end{frame}
 
 \begin{frame}
@@ -277,10 +281,24 @@
   \end{block}
 \end{frame}
 
-\begin{frame}[fragile]
-  \frametitle{Custom Syntactic Sugar}
+\begin{frame}
+  \frametitle{Syntactic Passes}
 
-  We define a simple custom elaborator to make it easy to define syntactic rewrites.
+  \begin{itemize}
+    \item Purpose: clean up after more interesting optimisations, e.g.\ after replacing an unused tactic with \lean|skip|.
+    \item Very cheap (compared to semantic passes), so we apply them before/after every semantic pass.
+    \item We make them even cheaper:
+      \begin{itemize}
+        \item Combine all optimisations into a single post-traversal with a fixpoint loop at each syntax node.
+        \item Index individual optimisations by their head node kind.
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Custom Syntactic Sugar for Syntactic Passes}
+
+  We define a custom elaborator for syntactic optimisations.
 
   \begin{leancode}
     def solve := ls_analysis_fn%
@@ -294,19 +312,6 @@
         else
           `(tactic| solve $[| $tss']*)
   \end{leancode}
-\end{frame}
-
-\begin{frame}
-  \frametitle{Syntactic Passes}
-
-  \begin{itemize}
-    \item Very cheap (compared to semantic passes), so we apply them eagerly before/after semantic passes.
-    \item We make them even cheaper:
-      \begin{itemize}
-        \item Combine all optimisations into a single post-traversal with a fixpoint loop at each syntax node.
-        \item Index individual optimisations by their head node kind.
-      \end{itemize}
-  \end{itemize}
 \end{frame}
 
 \begin{frame}
